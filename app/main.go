@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/jackc/pgconn"
 	"log"
 	"os"
 	"os/signal"
@@ -25,6 +26,14 @@ func main() {
 	dbConfig.ConnConfig.Logger = &pgxLogger{}
 	dbConfig.ConnConfig.LogLevel = pgx.LogLevelTrace
 	dbConfig.MaxConnLifetime = 1 * time.Second
+	dbConfig.ConnConfig.ValidateConnect = func(ctx context.Context, pgconn *pgconn.PgConn) error {
+		log.Printf("%s: [%v] %s\n", "info", ctx.Value("ctx_name"), "ValidateConnect")
+		return nil
+	}
+	dbConfig.ConnConfig.AfterConnect = func(ctx context.Context, pgconn *pgconn.PgConn) error {
+		log.Printf("%s: [%v] %s\n", "info", ctx.Value("ctx_name"), "AfterConnect")
+		return nil
+	}
 	dbConfig.BeforeAcquire = func(ctx context.Context, conn *pgx.Conn) bool {
 		log.Printf("%s: [%v] %s\n", "info", ctx.Value("ctx_name"), "BeforeAcquire")
 		return true

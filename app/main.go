@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/sirupsen/logrus"
 	"log"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
 )
 
 func main() {
@@ -26,22 +30,46 @@ func main() {
 	}
 	defer pool.Close()
 
-	ctx2 := context.WithValue(context.Background(), "ctx_name", "2")
-	conn, err := pool.Acquire(ctx2)
-	if err != nil {
-		log.Fatalf("Unable to connect to database: %v\n", err)
+	cancelCtx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(i int) {
+			ticker := time.NewTicker(500*time.Millisecond)
+			defer ticker.Stop()
+			queryCount := 0
+			for {
+				select {
+				case <-ticker.C:
+					if queryCount == 10 {
+						continue
+					}
+					var v0 int64
+					var v1 int64
+					ctx3 := context.WithValue(context.Background(), "ctx_name", "2")
+					err = pool.QueryRow(ctx3, "select 1 as v0, 2 as v1;").Scan(&v0, &v1)
+					if err != nil {
+						log.Fatalf("QueryRow failed: %v\n", err)
+					}
+					log.Println("hello there!!!!", v0, v1)
+					queryCount++
+				case <-cancelCtx.Done():
+					wg.Done()
+				}
+			}
+		}(i)
 	}
-	defer conn.Release()
 
-	var v0 int64
-	var v1 int64
-	ctx3 := context.WithValue(context.Background(), "ctx_name", "3")
-	err = conn.QueryRow(ctx3, "select 1 as v0, 2 as v1;").Scan(&v0, &v1)
-	if err != nil {
-		log.Fatalf("QueryRow failed: %v\n", err)
-	}
+	sig := make(chan os.Signal)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sig
+		log.Println("shutting down...")
+		cancel()
+	}()
 
-	fmt.Println("hello there!!!!", v0, v1)
+	wg.Wait()
+	log.Println("goodbye 👋")
 }
 
 type pgxLogger struct {

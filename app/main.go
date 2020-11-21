@@ -2,15 +2,17 @@ package main
 
 import (
 	"context"
-	"github.com/jackc/pgx/v4"
-	"github.com/jackc/pgx/v4/pgxpool"
-	"github.com/sirupsen/logrus"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -22,6 +24,11 @@ func main() {
 
 	dbConfig.ConnConfig.Logger = &pgxLogger{}
 	dbConfig.ConnConfig.LogLevel = pgx.LogLevelTrace
+	dbConfig.MaxConnLifetime = 1 * time.Second
+	dbConfig.BeforeAcquire = func(ctx context.Context, conn *pgx.Conn) bool {
+		log.Printf("%s: [%v] %s\n", "info", ctx.Value("ctx_name"), "BeforeAcquire")
+		return true
+	}
 
 	ctx1 := context.WithValue(context.Background(), "ctx_name", "1")
 	pool, err := pgxpool.ConnectConfig(ctx1, dbConfig)
@@ -35,7 +42,7 @@ func main() {
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func(i int) {
-			ticker := time.NewTicker(500*time.Millisecond)
+			ticker := time.NewTicker(500 * time.Millisecond)
 			defer ticker.Stop()
 			queryCount := 0
 			for {
@@ -46,7 +53,7 @@ func main() {
 					}
 					var v0 int64
 					var v1 int64
-					ctx3 := context.WithValue(context.Background(), "ctx_name", "2")
+					ctx3 := context.WithValue(context.Background(), "ctx_name", fmt.Sprintf("2-%d", i))
 					err = pool.QueryRow(ctx3, "select 1 as v0, 2 as v1;").Scan(&v0, &v1)
 					if err != nil {
 						log.Fatalf("QueryRow failed: %v\n", err)
@@ -80,6 +87,5 @@ func (l *pgxLogger) Log(ctx context.Context, level pgx.LogLevel, msg string, dat
 }
 
 func initPgxLogger(logger *logrus.Entry) pgx.Logger {
-	return &pgxLogger{
-	}
+	return &pgxLogger{}
 }
